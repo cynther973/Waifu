@@ -1,0 +1,8 @@
+# .env file
+
+# The Telegram Bot Token provided by BotFather
+TELEGRAM_BOT_TOKEN="7636797595:AAHKEYl_D1Zl8gZeAEIsHgukJWEk1_uaJVU"
+
+# The user ID of the bot's owner for sudo commands
+# Replace with your actual user ID
+SUDO_ID="8150699034"
