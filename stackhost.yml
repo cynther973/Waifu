@@ -1,0 +1,15 @@
+version: '3.8'
+
+services:
+  telegram_bot:
+    image: shota-waifu-bot
+    container_name: shota_waifu_bot
+    restart: always
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      - TELEGRAM_BOT_TOKEN=${7636797595:AAHKEYl_D1Zl8gZeAEIsHgukJWEk1_uaJVU}
+      - SUDO_ID=${8150699034}
+    volumes:
+      - ./bot_data.db:/app/bot_data.db
