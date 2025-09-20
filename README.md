@@ -1,1 +1,2 @@
-# Waifu
+bot_data.db
+.env
