@@ -1,0 +1,15 @@
+# .gitignore file
+
+# Ignore the virtual environment directory
+venv/
+.venv/
+
+# Ignore the local environment file
+.env
+
+# Ignore bot data files
+bot_data.db
+
+# Ignore any Python cache files
+__pycache__/
+*.pyc
