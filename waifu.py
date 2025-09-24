@@ -845,7 +845,7 @@ async def set_support_group(update: Update, context: CallbackContext):
 
     group_id_str = context.args[0]
     group_link = context.args[1]
-    
+
     try:
         group_id = int(group_id_str)
         if not group_id_str.startswith('-100'):
@@ -1154,7 +1154,7 @@ async def topcoins(update: Update, context: CallbackContext):
         await update.message.reply_text(apply_font("No one has earned any coins yet. Be the first! 💰"))
         return
 
-    message = f"{apply_font('💰 TOP COIN HOARDERS 💰')}\n\n"
+    message = f"{apply_font('💰 TOP COINS HOLDERS 💰')}\n\n"
     for i, (user_id, username, coins) in enumerate(top_coin_hoarders, 1):
         message += f" {i}. [{username}](tg://user?id={user_id}): {coins} {apply_font('coins')}\n"
 
@@ -1241,19 +1241,14 @@ async def grab_character(update: Update, context: CallbackContext):
                 (coins_earned, username, int(time.time()), user_id)
             )
 
-            cursor.execute("SELECT character_id FROM characters WHERE name = ?", (correct_name,))
-            char_id_result = cursor.fetchone()
-
-            if char_id_result:
-                char_id = char_id_result[0]
-                cursor.execute(
-                    "INSERT OR IGNORE INTO user_harem (user_id, character_id, grab_count) VALUES (?, ?, 0)",
-                    (user_id, char_id)
-                )
-                cursor.execute(
-                    "UPDATE user_harem SET grab_count = grab_count + 1 WHERE user_id = ? AND character_id = ?",
-                    (user_id, char_id)
-                )
+            cursor.execute(
+                "INSERT OR IGNORE INTO user_harem (user_id, character_id, grab_count) VALUES (?, ?, 0)",
+                (user_id, char_id)
+            )
+            cursor.execute(
+                "UPDATE user_harem SET grab_count = grab_count + 1 WHERE user_id = ? AND character_id = ?",
+                (user_id, char_id)
+            )
 
             conn.commit()
             del spawned_characters[chat_id]
@@ -1502,11 +1497,11 @@ async def bonus(update: Update, context: CallbackContext):
         id_row = cursor.fetchone()
         cursor.execute("SELECT setting_value FROM bot_settings WHERE setting_name = 'support_group_link'")
         link_row = cursor.fetchone()
-        
+
         if not id_row or not link_row:
             await update.message.reply_text(apply_font("🚧 This command is restricted to the support group, but it has not been set by the owner."))
             return
-        
+
         support_group_id = int(id_row[0])
         support_group_link = link_row[0]
 
@@ -2214,7 +2209,7 @@ async def set_droptime(update: Update, context: CallbackContext):
     if not is_sudo(update.effective_user.id):
         await update.message.reply_text(apply_font("🚧 You are not authorized to use this command."))
         return
-    
+
     chat_id = update.effective_chat.id
 
     if not context.args or not context.args[0].isdigit():
@@ -2554,7 +2549,7 @@ async def profile(update: Update, context: CallbackContext):
 async def handle_message(update: Update, context: CallbackContext):
     if not update.effective_chat or not update.effective_user:
         return
-        
+
     chat_id = update.effective_chat.id
     user_id = update.effective_user.id
     username = get_user_display_name(update.effective_user)
@@ -2610,7 +2605,7 @@ async def handle_message(update: Update, context: CallbackContext):
         if update.message and (update.message.text or update.message.sticker):
             if not update.message.text or not update.message.text.startswith('/'):
                 message_counters[chat_id] += 1
-                
+
                 current_droptime = group_droptimes[chat_id]
 
                 if message_counters[chat_id] >= current_droptime:
@@ -2701,7 +2696,7 @@ async def select_character_by_rarity():
             total_inverse_weight = sum(1.0 / w for w in spawn_weights if w > 0)
             if total_inverse_weight == 0:
                 return None # Avoid division by zero
-            
+
             selection_weights = [(1.0 / w) / total_inverse_weight if w > 0 else 0 for w in spawn_weights]
             selected_rarity_name = random.choices(rarity_names, weights=selection_weights, k=1)[0]
 
@@ -2754,8 +2749,7 @@ async def inline_query(update: Update, context: CallbackContext) -> None:
             # Fetch characters from the user's harem
             query_str = "SELECT T1.character_id, T1.name, T1.file_id, T1.is_video, T1.rarity, T1.anime_name, T2.emoji, T3.grab_count FROM characters T1 " \
                         "INNER JOIN rarities T2 ON T1.rarity = T2.name " \
-                        "INNER JOIN user_harem T3 ON T1.character_id = T3.character_id " \
-                        "WHERE T3.user_id = ?"
+                        "INNER JOIN user_harem T3 ON T1.character_id = T3.character_id "
             params = [target_user_id]
 
             if search_terms:
@@ -2924,4 +2918,4 @@ def main():
     print("Bot is shutting down.")
 
 if __name__ == '__main__':
-    main()
+    main();
