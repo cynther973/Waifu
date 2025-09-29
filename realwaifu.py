@@ -310,7 +310,7 @@ async def start(update: Update, context: CallbackContext):
 
     welcome_message = (
         f"┏━━━━━━━━━━━━━━━━━━━━━━━━━⧫\n"
-        f"  ✦ {apply_font('Shota x Waifu Bot')} ✦\n"
+        f"  ✦ {apply_font('Nezuko x Grab Bot')} ✦\n"
         f"┗━━━━━━━━━━━━━━━━━━━━━━━━━⧫\n"
         f"{apply_font('• I can help you find your waifu or husbando in your group chat.')}\n"
         f"{apply_font('• You can guess the character name using')} `/grab [name]` {apply_font('and add them to your collection.')}\n"
