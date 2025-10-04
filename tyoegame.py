@@ -1,9 +1,8 @@
-
 import os
 import json
 import random
 import logging
-import time # <<< NEW IMPORT FOR SYNCHRONIZATION
+import time # Needed for synchronization logic
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -14,7 +13,8 @@ from telegram.ext import (
 # NOTE: Replace with your actual bot token and SUDO user ID
 TOKEN = "8357436600:AAEqoZvNjoDvy5H1gBet_aPOyfBarDDcr4g"
 DATA_FILE = "anime_game_data.json"
-CHALLENGE_INTERVAL = 600 # 10 minutes (600 seconds)
+# CHALLENGE_INTERVAL is loaded from GameData if present, otherwise defaults here.
+# It is stored and updated globally via GameData.
 SUDO_ID = 8442334913
 # ============================================
 
@@ -31,11 +31,13 @@ logger = logging.getLogger(__name__)
 
 # ================== GAME DATA MANAGEMENT ==================
 class GameData:
-    """Manages loading and saving of bot data to a JSON file."""
+    """Manages loading and saving of bot data, including the global interval."""
     def __init__(self):
         self.user_scores = {}
         self.current_challenges = {}
         self.active_groups = set()
+        # Global variable for drop interval, defaults to 10 minutes (600s)
+        self.challenge_interval = 600 
         self.load()
 
     def load(self):
@@ -47,6 +49,8 @@ class GameData:
                     self.user_scores = data.get("user_scores", {})
                     self.current_challenges = data.get("current_challenges", {})
                     self.active_groups = set(str(g) for g in data.get("active_groups", []))
+                    # Load the interval, using the default if not found
+                    self.challenge_interval = data.get("challenge_interval", 600)
                 logger.info("Game data loaded successfully.")
             except (json.JSONDecodeError, IOError) as e:
                 logger.error(f"Error loading data: {e}. Starting with empty data.")
@@ -59,46 +63,56 @@ class GameData:
             json.dump({
                 "user_scores": self.user_scores,
                 "current_challenges": self.current_challenges,
-                "active_groups": list(self.active_groups)
+                "active_groups": list(self.active_groups),
+                "challenge_interval": self.challenge_interval # Save the interval
             }, f, indent=4)
 
 game_data = GameData()
+# ==========================================================
 
 # ================== JOB QUEUE HELPERS ==================
 
+def remove_existing_jobs(job_queue: JobQueue, chat_id: int):
+    """Removes the spawn job for a specific chat ID."""
+    job_name = f"spawn_{chat_id}"
+    current_jobs = job_queue.get_jobs_by_name(job_name)
+    if current_jobs:
+        for job in current_jobs:
+            job.schedule_removal()
+        logger.info(f"Removed old spawn job for group ID: {chat_id}")
+
 def start_spawn_job(job_queue: JobQueue, chat_id: int):
     """
-    Starts the repeating character spawn job, synchronized to run every
-    CHALLENGE_INTERVAL (10 minutes) across all active groups.
+    Starts the repeating character spawn job, synchronized across all groups.
+    Uses the currently loaded game_data.challenge_interval.
     """
     gid_str = str(chat_id)
     job_name = f"spawn_{gid_str}"
     
-    if not job_queue.get_jobs_by_name(job_name):
-        # --- Synchronization Logic ---
-        # Calculate time until the next global 10-minute mark (or whatever CHALLENGE_INTERVAL is)
-        current_time_sec = time.time()
-        # Remainder since last interval mark
-        remainder = current_time_sec % CHALLENGE_INTERVAL 
-        # Time until next mark
-        time_until_next_drop = CHALLENGE_INTERVAL - remainder
-        
-        # If the remainder is very small (meaning we are right on the drop time), 
-        # wait a full interval to avoid issues, though typically not needed.
-        if time_until_next_drop < 1:
-             time_until_next_drop += CHALLENGE_INTERVAL
-        # --- End Synchronization Logic ---
-        
-        job_queue.run_repeating(
-            spawn_character, 
-            interval=CHALLENGE_INTERVAL,
-            first=time_until_next_drop, # Use the calculated offset for alignment
-            chat_id=chat_id, 
-            name=job_name
-        )
-        logger.info(f"Started SYNCHRONIZED spawn job for group ID: {chat_id}. First drop in {time_until_next_drop:.2f} seconds.")
-    else:
-        logger.info(f"Spawn job for group ID: {chat_id} is already running.")
+    # Check if the job is already running to prevent duplicates (important after init/settime)
+    if job_queue.get_jobs_by_name(job_name):
+        logger.info(f"Spawn job for group ID: {chat_id} is already running. Skipping start.")
+        return
+
+    interval = game_data.challenge_interval
+    
+    # --- Synchronization Logic ---
+    current_time_sec = time.time()
+    remainder = current_time_sec % interval
+    time_until_next_drop = interval - remainder
+    
+    if time_until_next_drop < 1:
+         time_until_next_drop += interval
+    # --- End Synchronization Logic ---
+    
+    job_queue.run_repeating(
+        spawn_character, 
+        interval=interval,
+        first=time_until_next_drop, # Use the calculated offset for alignment
+        chat_id=chat_id, 
+        name=job_name
+    )
+    logger.info(f"Started SYNCHRONIZED spawn job for group ID: {chat_id}. Interval: {interval}s. First drop in {time_until_next_drop:.2f}s.")
 
 
 async def spawn_character(context: ContextTypes.DEFAULT_TYPE):
@@ -111,7 +125,7 @@ async def spawn_character(context: ContextTypes.DEFAULT_TYPE):
     
     # Check for and silently replace any missed character
     if gid in game_data.current_challenges:
-        previous_char = game_data.current_challenges.pop(gid) # Use pop to clear it
+        previous_char = game_data.current_challenges.pop(gid)
         logger.info(f"Silently replacing un-caught character in group {gid}: {previous_char}")
         
     character = random.choice(CHARACTERS)
@@ -149,8 +163,8 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             game_data.save()
             logger.info(f"Group {gid_str} added and saved.")
         
-        # This will start the SYNCHRONIZED 10-minute job
         start_spawn_job(context.job_queue, chat_id)
+
 
 async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Displays the top 10 players in plain text."""
@@ -238,6 +252,41 @@ async def wdrop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     logger.info(f"SUDO forced character drop: {character} in group {gid}")
 
+
+async def settime_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """SUDO command to globally set the drop interval and restart jobs."""
+    if update.effective_user.id != SUDO_ID:
+        await update.message.reply_text("You are not allowed to use this command.")
+        return
+
+    if not context.args or not context.args[0].isdigit():
+        current = game_data.challenge_interval
+        await update.message.reply_text(f"Usage: /settime [seconds]. Current interval is {current} seconds.")
+        return
+
+    try:
+        new_interval = int(context.args[0])
+        if new_interval < 5:
+            await update.message.reply_text("Interval must be at least 5 seconds.")
+            return
+
+        old_interval = game_data.challenge_interval
+        game_data.challenge_interval = new_interval
+        game_data.save()
+        
+        # Restart all existing synchronized jobs with the new interval
+        for gid_str in game_data.active_groups:
+            chat_id = int(gid_str)
+            remove_existing_jobs(context.job_queue, chat_id)
+            start_spawn_job(context.job_queue, chat_id)
+
+        await update.message.reply_text(f"Global drop interval updated from {old_interval}s to {new_interval}s.\nAll active groups have been synchronized to the new schedule.")
+        logger.info(f"SUDO changed interval from {old_interval}s to {new_interval}s.")
+
+    except ValueError:
+        await update.message.reply_text("Invalid value. Please provide an integer in seconds.")
+
+
 # ================== MAIN EXECUTION ==================
 
 def init_jobs(app: ApplicationBuilder):
@@ -261,16 +310,23 @@ def main():
     # Initialize jobs using the synchronized logic
     init_jobs(app) 
 
+    # --- Command Handlers ---
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
     
+    # SUDO commands
     app.add_handler(CommandHandler("upload", upload))
     app.add_handler(CommandHandler("wdrop", wdrop))
+    app.add_handler(CommandHandler("settime", settime_command)) # <<< NEW HANDLER
     
+    # Message handler must come last
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     logger.info("Bot started and polling...")
     app.run_polling()
+    # Note on Deployment: If running on a platform like Heroku or certain cloud functions, 
+    # use a dedicated webhooks setup instead of run_polling(). 
+    # For a simple VPS, run_polling() should be fine.
 
 if __name__ == "__main__":
     main()
