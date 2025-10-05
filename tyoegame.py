@@ -37,7 +37,7 @@ class GameData:
         self.current_challenges = {}
         self.active_groups = set()
         # Global variable for drop interval, defaults to 10 minutes (600s)
-        self.challenge_interval = 600 
+        self.challenge_interval = 1
         self.load()
 
     def load(self):
