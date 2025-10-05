@@ -2,7 +2,7 @@ import os
 import json
 import random
 import logging
-import time # Needed for synchronization logic
+import time
 from telegram import Update, InlineKeyboardMarkup, InlineKeyboardButton
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -13,8 +13,6 @@ from telegram.ext import (
 # NOTE: Replace with your actual bot token and SUDO user ID
 TOKEN = "8357436600:AAEqoZvNjoDvy5H1gBet_aPOyfBarDDcr4g"
 DATA_FILE = "anime_game_data.json"
-# CHALLENGE_INTERVAL is loaded from GameData if present, otherwise defaults here.
-# It is stored and updated globally via GameData.
 SUDO_ID = 8442334913
 # ============================================
 
@@ -37,7 +35,7 @@ class GameData:
         self.current_challenges = {}
         self.active_groups = set()
         # Global variable for drop interval, defaults to 10 minutes (600s)
-        self.challenge_interval = 1
+        self.challenge_interval = 600 
         self.load()
 
     def load(self):
@@ -49,7 +47,6 @@ class GameData:
                     self.user_scores = data.get("user_scores", {})
                     self.current_challenges = data.get("current_challenges", {})
                     self.active_groups = set(str(g) for g in data.get("active_groups", []))
-                    # Load the interval, using the default if not found
                     self.challenge_interval = data.get("challenge_interval", 600)
                 logger.info("Game data loaded successfully.")
             except (json.JSONDecodeError, IOError) as e:
@@ -64,7 +61,7 @@ class GameData:
                 "user_scores": self.user_scores,
                 "current_challenges": self.current_challenges,
                 "active_groups": list(self.active_groups),
-                "challenge_interval": self.challenge_interval # Save the interval
+                "challenge_interval": self.challenge_interval
             }, f, indent=4)
 
 game_data = GameData()
@@ -84,12 +81,11 @@ def remove_existing_jobs(job_queue: JobQueue, chat_id: int):
 def start_spawn_job(job_queue: JobQueue, chat_id: int):
     """
     Starts the repeating character spawn job, synchronized across all groups.
-    Uses the currently loaded game_data.challenge_interval.
     """
     gid_str = str(chat_id)
     job_name = f"spawn_{gid_str}"
     
-    # Check if the job is already running to prevent duplicates (important after init/settime)
+    # Check if the job is already running to prevent duplicates 
     if job_queue.get_jobs_by_name(job_name):
         logger.info(f"Spawn job for group ID: {chat_id} is already running. Skipping start.")
         return
@@ -123,7 +119,6 @@ async def spawn_character(context: ContextTypes.DEFAULT_TYPE):
     gid = str(context.job.chat_id)
     chat_id_int = context.job.chat_id
     
-    # Check for and silently replace any missed character
     if gid in game_data.current_challenges:
         previous_char = game_data.current_challenges.pop(gid)
         logger.info(f"Silently replacing un-caught character in group {gid}: {previous_char}")
@@ -136,7 +131,6 @@ async def spawn_character(context: ContextTypes.DEFAULT_TYPE):
         text=f"A character has appeared so type fast vro fr coming in leadeboard...\n 🌹type: {character}"
     )
 
-    # Update the challenge
     game_data.current_challenges[gid] = character
     game_data.save()
 
@@ -297,7 +291,6 @@ def init_jobs(app: ApplicationBuilder):
     for gid_str in game_data.active_groups:
         try:
             chat_id = int(gid_str)
-            # Use the synchronized job starter
             start_spawn_job(job_queue, chat_id)
         except ValueError:
             logger.error(f"Invalid group ID found in data: {gid_str}. Skipping.")
@@ -307,26 +300,22 @@ def main():
     """Starts the bot."""
     app = ApplicationBuilder().token(TOKEN).build()
     
-    # Initialize jobs using the synchronized logic
+    # 1. Initialize jobs immediately after building the application,
+    #    before adding handlers. This ensures persistence on startup.
+    #    <<< THIS IS THE CRITICAL FIX FOR DEPLOYMENT >>>
     init_jobs(app) 
 
-    # --- Command Handlers ---
+    # 2. Add Handlers
     app.add_handler(CommandHandler("start", start_command))
     app.add_handler(CommandHandler("leaderboard", leaderboard))
-    
-    # SUDO commands
     app.add_handler(CommandHandler("upload", upload))
     app.add_handler(CommandHandler("wdrop", wdrop))
-    app.add_handler(CommandHandler("settime", settime_command)) # <<< NEW HANDLER
+    app.add_handler(CommandHandler("settime", settime_command))
     
-    # Message handler must come last
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
     logger.info("Bot started and polling...")
     app.run_polling()
-    # Note on Deployment: If running on a platform like Heroku or certain cloud functions, 
-    # use a dedicated webhooks setup instead of run_polling(). 
-    # For a simple VPS, run_polling() should be fine.
 
 if __name__ == "__main__":
     main()
